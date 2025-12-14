@@ -6,12 +6,15 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
 from datetime import datetime
 import numpy as np
+from statistics import mean
+
 
 possibleDice: list[int] = [4, 6, 8, 10, 12, 20, 100]
 list_of_lists: list[list[tuple[datetime, int]]] = [[] for _ in possibleDice]
 all_time_rolls: list[list[tuple[datetime, int]]] = [[] for _ in possibleDice]
 all_time_averages: list[float] = [0.0] * len(possibleDice)
 SAVE_FILE: Path = Path("dice_stats.json")
+
 
 def averageList(passedList: list[tuple[datetime, int]]) -> float:
     realElements: list[int] = [roll for ts, roll in passedList]
@@ -20,12 +23,14 @@ def averageList(passedList: list[tuple[datetime, int]]) -> float:
     except ZeroDivisionError:
         return 0.0
 
+
 def load_all_time_data() -> None:
+    global all_time_rolls, all_time_averages
     if SAVE_FILE.exists():
         try:
             with open(SAVE_FILE, 'r') as f:
                 data: dict = json.load(f)
-                all_time_rolls: list[list[tuple[datetime, int]]] = []
+                all_time_rolls = []
                 for dice_data in data.get('all_time_rolls', [[] for _ in possibleDice]):
                     dice_rolls: list[tuple[datetime, int]] = []
                     for ts_str, roll in dice_data:
@@ -36,9 +41,10 @@ def load_all_time_data() -> None:
                             pass
                     all_time_rolls.append(dice_rolls)
                 
-                all_time_averages: list[float] = data.get('all_time_averages', [0.0] * len(possibleDice))
+                all_time_averages = data.get('all_time_averages', [0.0] * len(possibleDice))
         except json.JSONDecodeError:
             pass
+
 
 def save_all_time_data() -> None:
     data: dict = {
@@ -48,6 +54,7 @@ def save_all_time_data() -> None:
     }
     with open(SAVE_FILE, 'w') as f:
         json.dump(data, f, indent=2)
+
 
 class GUI(tk.Tk):
     def __init__(self) -> None:
@@ -64,9 +71,6 @@ class GUI(tk.Tk):
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         for index, dice in enumerate(possibleDice):
-            index: int
-            dice: int
-
             diceLabel: tk.Label = tk.Label(main_frame, text=f"d{dice}", font=("Arial", 10, "bold"))
             sessionLabel: tk.Label = tk.Label(main_frame, text="Session Avg = 0")
             allTimeLabel: tk.Label = tk.Label(main_frame, text=f"All-time Avg = {all_time_averages[index]:.2f}")
@@ -91,20 +95,15 @@ class GUI(tk.Tk):
         
         export_button: tk.Button = tk.Button(button_frame, text="Export & Graph", command=self.export_and_graph, bg="#2196F3", fg="white")
         export_button.pack(side=tk.LEFT, padx=5)
-    
+ 
     def updateRolls(self) -> None:
         current_time: datetime = datetime.now()
         
         for index, entry in self.entries.items():
-            index: int
-            entry: tk.Entry
-
             input_value: str = entry.get()
             input_values: list[str] = input_value.replace(",", " ").split()
             
             for value in input_values:
-                value: str
-
                 try:
                     dice_value: int = int(value)
                     roll_data: tuple[datetime, int] = (current_time, dice_value)
@@ -119,24 +118,19 @@ class GUI(tk.Tk):
             entry.delete(0, tk.END)
         
         for index in range(len(list_of_lists)):
-            index: int
-
             session_avg: float = averageList(list_of_lists[index])
             all_time_avg: float = all_time_averages[index]
             
             self.sessionLabels[index].config(text=f"Session Avg = {session_avg:.2f}")
             self.allTimeLabels[index].config(text=f"All-time Avg = {all_time_avg:.2f}")
-    
+ 
     def export_and_graph(self) -> None:
         save_all_time_data()
         
-        fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+        fig, axes = plt.subplots(2, 4, figsize=(16, 10))
         fig.suptitle('Dice Rolling Performance Over Time', fontsize=16, fontweight='bold')
         
         for i, dice in enumerate(possibleDice):
-            i: int
-            dice: int
-
             row: int = i // 4
             col: int = i % 4
             
@@ -146,7 +140,12 @@ class GUI(tk.Tk):
                 times: list[datetime] = [r[0] for r in all_time_rolls[i]]
                 rolls: list[int] = [r[1] for r in all_time_rolls[i]]
                 
-                ax.plot(times, rolls, 'o-', markersize=4, linewidth=1, alpha=0.7)
+                ax.plot(times, rolls, 'o-', markersize=4, linewidth=1, alpha=0.7, label='Rolls')
+                
+                running_avgs: list[float] = []
+                for j in range(len(rolls)):
+                    running_avgs.append(mean(rolls[:j+1]))
+                ax.plot(times, running_avgs, 'b-', linewidth=2, alpha=0.9, label='Running Avg')
                 
                 expected_avg: float = (1 + dice) / 2
                 ax.axhline(y=expected_avg, color='r', linestyle='--', alpha=0.8, label=f'Expected: {expected_avg:.1f}')
@@ -174,17 +173,15 @@ class GUI(tk.Tk):
         
         summary_content: str = "Stats exported to dice_stats.json\n\n"
         for index, dice in enumerate(possibleDice):
-            index: int
-            dice: int
-
-            session_avg: float = averageList(list_of_lists[i])
-            all_time_avg: float = averageList(all_time_rolls[i])
-            summary_content += f"d{dice}: Session={session_avg:.2f}, All-time={all_time_avg:.2f}, Rolls={len(all_time_rolls[i])}\n"
+            session_avg: float = averageList(list_of_lists[index])
+            all_time_avg: float = all_time_averages[index]
+            summary_content += f"d{dice}: Session={session_avg:.2f}, All-time={all_time_avg:.2f}, Rolls={len(all_time_rolls[index])}\n"
         
         summary_text.insert(tk.END, summary_content)
         summary_text.config(state=tk.DISABLED)
         
         tk.Button(summary_window, text="Close", command=summary_window.destroy).pack(pady=10)
+
 
 if __name__ == "__main__":
     app: GUI = GUI()
